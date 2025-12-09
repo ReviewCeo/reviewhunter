@@ -239,9 +239,9 @@ def analyze_reviews_outscraper(reviews: list) -> dict:
     now = datetime.now()
     
     for review in reviews:
-        # Outscraper liefert owner_response direkt
-        owner_response = review.get("owner_response") or review.get("response_text")
-        if owner_response:
+        # Outscraper Feld heißt "owner_answer"
+        owner_answer = review.get("owner_answer") or review.get("owner_response") or review.get("response_from_owner_text")
+        if owner_answer:
             answered += 1
         
         # Rating checken (1-3 = negativ)
