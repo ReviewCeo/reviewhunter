@@ -99,7 +99,7 @@ def search_businesses_outscraper(query: str, location: str, api_key: str, limit:
         "X-API-KEY": api_key
     }
     
-    # Outscraper Format: "query, location" nicht "query in location"
+    # Outscraper Format: "query, location"
     params = {
         "query": f"{query}, {location}, Deutschland",
         "limit": limit,
@@ -110,24 +110,47 @@ def search_businesses_outscraper(query: str, location: str, api_key: str, limit:
     try:
         response = requests.get(url, headers=headers, params=params, timeout=120)
         
-        # Debug info
-        if response.status_code != 200:
+        # 202 = Async/Pending - müssen pollen
+        if response.status_code == 202:
+            result = response.json()
+            results_url = result.get("results_location")
+            
+            if results_url:
+                # Polling - warte auf Ergebnisse
+                for attempt in range(30):  # Max 30 Versuche (60 Sekunden)
+                    time.sleep(2)
+                    poll_response = requests.get(results_url, headers=headers, timeout=30)
+                    
+                    if poll_response.status_code == 200:
+                        poll_data = poll_response.json()
+                        
+                        # Check ob fertig
+                        if poll_data.get("status") == "Success" or isinstance(poll_data, list):
+                            data = poll_data.get("data", poll_data) if isinstance(poll_data, dict) else poll_data
+                            if data and len(data) > 0:
+                                items = data[0] if isinstance(data[0], list) else data
+                                return [b for b in items if isinstance(b, dict) and b.get('name')]
+                            return []
+                    elif poll_response.status_code == 202:
+                        continue  # Noch nicht fertig
+                    else:
+                        break
+                
+                st.warning("⏱️ Timeout beim Warten auf Ergebnisse")
+                return []
+        
+        elif response.status_code == 200:
+            result = response.json()
+            if result and len(result) > 0:
+                data = result[0] if isinstance(result[0], list) else result
+                return [b for b in data if isinstance(b, dict) and b.get('name')]
+            return []
+        else:
             st.error(f"API Status: {response.status_code} - {response.text[:200]}")
             return []
-        
-        result = response.json()
-        
-        # Outscraper gibt Liste von Listen zurück
-        if result and len(result) > 0:
-            data = result[0] if isinstance(result[0], list) else result
-            # Filter: nur echte Ergebnisse (dicts mit 'name')
-            return [b for b in data if isinstance(b, dict) and b.get('name')]
-        return []
+            
     except requests.exceptions.Timeout:
-        st.error("⏱️ Timeout - Anfrage dauerte zu lange. Versuche weniger Ergebnisse.")
-        return []
-    except requests.exceptions.RequestException as e:
-        st.error(f"Request Fehler: {str(e)}")
+        st.error("⏱️ Timeout - Anfrage dauerte zu lange.")
         return []
     except Exception as e:
         st.error(f"API Fehler: {type(e).__name__}: {str(e)}")
@@ -156,15 +179,40 @@ def get_reviews_outscraper(place_id: str, api_key: str, reviews_limit: int = 20)
     try:
         response = requests.get(url, headers=headers, params=params, timeout=60)
         
-        if response.status_code != 200:
+        # 202 = Async - pollen
+        if response.status_code == 202:
+            result = response.json()
+            results_url = result.get("results_location")
+            
+            if results_url:
+                for attempt in range(20):  # Max 40 Sekunden
+                    time.sleep(2)
+                    poll_response = requests.get(results_url, headers=headers, timeout=30)
+                    
+                    if poll_response.status_code == 200:
+                        poll_data = poll_response.json()
+                        
+                        if poll_data.get("status") == "Success" or isinstance(poll_data, list):
+                            data = poll_data.get("data", poll_data) if isinstance(poll_data, dict) else poll_data
+                            if data and len(data) > 0:
+                                place_data = data[0] if isinstance(data[0], dict) else {}
+                                return place_data.get("reviews_data", []) or []
+                        return []
+                    elif poll_response.status_code == 202:
+                        continue
+                    else:
+                        break
             return []
         
-        result = response.json()
-        
-        if result and len(result) > 0:
-            place_data = result[0] if isinstance(result[0], dict) else {}
-            return place_data.get("reviews_data", []) or []
-        return []
+        elif response.status_code == 200:
+            result = response.json()
+            if result and len(result) > 0:
+                place_data = result[0] if isinstance(result[0], dict) else {}
+                return place_data.get("reviews_data", []) or []
+            return []
+        else:
+            return []
+            
     except:
         return []
 
