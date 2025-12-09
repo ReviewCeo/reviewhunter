@@ -96,32 +96,41 @@ def search_businesses_outscraper(query: str, location: str, api_key: str, limit:
     url = "https://api.app.outscraper.com/maps/search-v3"
     
     headers = {
-        "X-API-KEY": api_key,
-        "Content-Type": "application/json"
+        "X-API-KEY": api_key
     }
     
+    # Outscraper Format: "query, location" nicht "query in location"
     params = {
-        "query": f"{query} in {location}",
+        "query": f"{query}, {location}, Deutschland",
         "limit": limit,
         "language": "de",
-        "region": "DE",
-        "async": False
+        "region": "DE"
     }
     
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=60)
-        response.raise_for_status()
+        response = requests.get(url, headers=headers, params=params, timeout=120)
+        
+        # Debug info
+        if response.status_code != 200:
+            st.error(f"API Status: {response.status_code} - {response.text[:200]}")
+            return []
+        
         result = response.json()
         
         # Outscraper gibt Liste von Listen zurück
         if result and len(result) > 0:
-            return result[0] if isinstance(result[0], list) else result
+            data = result[0] if isinstance(result[0], list) else result
+            # Filter: nur echte Ergebnisse (dicts mit 'name')
+            return [b for b in data if isinstance(b, dict) and b.get('name')]
         return []
     except requests.exceptions.Timeout:
         st.error("⏱️ Timeout - Anfrage dauerte zu lange. Versuche weniger Ergebnisse.")
         return []
+    except requests.exceptions.RequestException as e:
+        st.error(f"Request Fehler: {str(e)}")
+        return []
     except Exception as e:
-        st.error(f"API Fehler: {str(e)}")
+        st.error(f"API Fehler: {type(e).__name__}: {str(e)}")
         return []
 
 
@@ -141,18 +150,20 @@ def get_reviews_outscraper(place_id: str, api_key: str, reviews_limit: int = 20)
         "query": place_id,
         "reviewsLimit": reviews_limit,
         "language": "de",
-        "sort": "newest",
-        "async": False
+        "sort": "newest"
     }
     
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
+        response = requests.get(url, headers=headers, params=params, timeout=60)
+        
+        if response.status_code != 200:
+            return []
+        
         result = response.json()
         
         if result and len(result) > 0:
-            place_data = result[0]
-            return place_data.get("reviews_data", [])
+            place_data = result[0] if isinstance(result[0], dict) else {}
+            return place_data.get("reviews_data", []) or []
         return []
     except:
         return []
